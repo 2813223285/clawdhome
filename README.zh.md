@@ -23,8 +23,8 @@ ClawdHome 适合那些希望在一台机器上托管多只 OpenClaw “虾”，
     <td><img src="docs/assets/readme/github-claw-pool.png" alt="Claw Pool" /></td>
   </tr>
   <tr>
-    <td><img src="docs/assets/readme/github-filemanager.png" alt="File Manager" /></td>
-    <td><img src="docs/assets/readme/github-process.png" alt="Process" /></td>
+    <td><img src="docs/assets/readme/github-role-center.png" alt="Role Center" /></td>
+    <td><img src="docs/assets/readme/github-role-awaken.png" alt="Role Awaken" /></td>
   </tr>
 </table>
 

@@ -23,8 +23,8 @@ Changelog: [English](CHANGELOG.en.md) | [中文](CHANGELOG.zh.md)
     <td><img src="docs/assets/readme/github-claw-pool.png" alt="Claw Pool" /></td>
   </tr>
   <tr>
-    <td><img src="docs/assets/readme/github-filemanager.png" alt="File Manager" /></td>
-    <td><img src="docs/assets/readme/github-process.png" alt="Process" /></td>
+      <td><img src="docs/assets/readme/github-role-center.png" alt="Role Center" /></td>
+      <td><img src="docs/assets/readme/github-role-awaken.png" alt="Role Awaken" /></td>
   </tr>
 </table>
 
