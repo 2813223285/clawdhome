@@ -131,6 +131,8 @@ extension ClawdHomeHelperImpl {
         }
 
         do {
+            try UserManager.normalizeHomeOwnership(username: username)
+
             // 1. 创建 ~/.npm-global 和 ~/.npm-global/bin 目录
             appendLog("$ mkdir -p \(npmGlobalBin)\n")
             try FileManager.default.createDirectory(
@@ -322,6 +324,8 @@ extension ClawdHomeHelperImpl {
         }
 
         do {
+            try UserManager.normalizeHomeOwnership(username: username)
+
             // 共享缓存目录给多用户初始化复用：所有用户可写，避免"第一只虾创建后其余用户不可写"。
             try FileManager.default.createDirectory(
                 atPath: homebrewCacheDir,
@@ -337,7 +341,8 @@ extension ClawdHomeHelperImpl {
                 username: username,
                 nodePath: nodePath,
                 command: "/bin/sh",
-                args: ["-lc", installScript]
+                // 不依赖用户 shell profile，避免 ~/.profile 权限异常导致修复流程中断。
+                args: ["-c", installScript]
             )
             if !output.isEmpty {
                 appendLog(output.hasSuffix("\n") ? output : "\(output)\n")
@@ -370,6 +375,14 @@ extension ClawdHomeHelperImpl {
 
             // 防御性修正：避免历史 root 执行导致目录归属错误
             _ = try? FilePermissionHelper.chownRecursive("\(home)/.brew", owner: username)
+            // 修正用户执行位：目录可遍历，Node/npm/npx 在异常权限下仍可执行。
+            _ = try? FilePermissionHelper.chmodSymbolicRecursive("\(home)/.brew", expr: "u+rwX")
+            for binary in ["node", "npm", "npx", "brew"] {
+                let path = "\(home)/.brew/bin/\(binary)"
+                if FileManager.default.fileExists(atPath: path) {
+                    _ = try? FilePermissionHelper.chmodSymbolic(path, expr: "u+rx")
+                }
+            }
             reply(true, nil)
         } catch {
             helperLog("修复 Homebrew 权限失败 @\(username): \(error.localizedDescription)", level: .warn)

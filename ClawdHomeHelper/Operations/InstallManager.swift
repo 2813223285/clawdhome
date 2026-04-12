@@ -82,9 +82,12 @@ struct InstallManager {
         }
         try normalizeNpmUserOwnership(username: username)
         let npmPath = try findNpmBinary(for: username)
-        let args = ["-u", username, "-H",
-                    "env", sudoNodePath(for: username),
-                    npmPath, "config", "set", "registry", option.rawValue, "--location=user"]
+        func makeArgs(npmPath: String) -> [String] {
+            ["-u", username, "-H",
+             "env", sudoNodePath(for: username),
+             npmPath, "config", "set", "registry", option.rawValue, "--location=user"]
+        }
+        let args = makeArgs(npmPath: npmPath)
         do {
             if let logURL {
                 _ = try runLogging("/usr/bin/sudo", args: args, logURL: logURL)
@@ -93,12 +96,15 @@ struct InstallManager {
             }
         } catch {
             if isNpmPermissionError(error) {
-                // 历史 npm 版本会留下 root-owned ~/.npm 或 ~/.npmrc，修复后重试一次。
+                // 历史环境可能留下 root-owned ~/.npm ~/.npmrc ~/.brew，或 npm/node 执行位异常。
                 try normalizeNpmUserOwnership(username: username)
+                try normalizeBrewUserOwnershipAndPermissions(username: username)
+                let retryNpmPath = try findNpmBinary(for: username)
+                let retryArgs = makeArgs(npmPath: retryNpmPath)
                 if let logURL {
-                    _ = try runLogging("/usr/bin/sudo", args: args, logURL: logURL)
+                    _ = try runLogging("/usr/bin/sudo", args: retryArgs, logURL: logURL)
                 } else {
-                    _ = try run("/usr/bin/sudo", args: args)
+                    _ = try run("/usr/bin/sudo", args: retryArgs)
                 }
             } else {
                 throw error
@@ -196,6 +202,8 @@ struct InstallManager {
         let npmrcPath = "\(home)/.npmrc"
         let npmGlobal = npmGlobalDir(for: username)
 
+        try UserManager.normalizeHomeOwnership(username: username)
+
         if !FileManager.default.fileExists(atPath: npmCacheDir) {
             try FileManager.default.createDirectory(
                 atPath: npmCacheDir,
@@ -212,6 +220,57 @@ struct InstallManager {
         }
         if FileManager.default.fileExists(atPath: npmGlobal) {
             try FilePermissionHelper.chownRecursive(npmGlobal, owner: username)
+        }
+    }
+
+    /// 修复隔离 Homebrew 目录归属与关键二进制执行位。
+    /// 触发场景：sudo -u <user> 执行 npm 返回 Permission denied（exit 126）。
+    private static func normalizeBrewUserOwnershipAndPermissions(username: String) throws {
+        let home = "/Users/\(username)"
+        let brewRoot = "\(home)/.brew"
+        guard FileManager.default.fileExists(atPath: brewRoot) else { return }
+
+        try FilePermissionHelper.chownRecursive(brewRoot, owner: username)
+        _ = try? FilePermissionHelper.chmodSymbolicRecursive(brewRoot, expr: "u+rwX")
+
+        var binaryCandidates: [String] = [
+            "\(brewRoot)/bin/node",
+            "\(brewRoot)/bin/npm",
+            "\(brewRoot)/bin/npx",
+            "\(brewRoot)/opt/node/bin/node",
+            "\(brewRoot)/opt/node/bin/npm",
+            "\(brewRoot)/opt/node/bin/npx",
+            "\(brewRoot)/opt/node@24/bin/node",
+            "\(brewRoot)/opt/node@24/bin/npm",
+            "\(brewRoot)/opt/node@24/bin/npx",
+            "\(brewRoot)/opt/node@22/bin/node",
+            "\(brewRoot)/opt/node@22/bin/npm",
+            "\(brewRoot)/opt/node@22/bin/npx",
+            "\(brewRoot)/opt/node@20/bin/node",
+            "\(brewRoot)/opt/node@20/bin/npm",
+            "\(brewRoot)/opt/node@20/bin/npx",
+            "\(brewRoot)/opt/node@18/bin/node",
+            "\(brewRoot)/opt/node@18/bin/npm",
+            "\(brewRoot)/opt/node@18/bin/npx",
+        ]
+
+        let cellar = "\(brewRoot)/Cellar"
+        if let entries = try? FileManager.default.contentsOfDirectory(atPath: cellar) {
+            let nodeFormulae = entries.filter { $0 == "node" || $0.hasPrefix("node@") }.sorted()
+            for formula in nodeFormulae {
+                let formulaDir = "\(cellar)/\(formula)"
+                if let versions = try? FileManager.default.contentsOfDirectory(atPath: formulaDir).sorted(by: >) {
+                    for version in versions {
+                        binaryCandidates.append("\(formulaDir)/\(version)/bin/node")
+                        binaryCandidates.append("\(formulaDir)/\(version)/bin/npm")
+                        binaryCandidates.append("\(formulaDir)/\(version)/bin/npx")
+                    }
+                }
+            }
+        }
+
+        for path in binaryCandidates where FileManager.default.fileExists(atPath: path) {
+            _ = try? FilePermissionHelper.chmodSymbolic(path, expr: "u+rx")
         }
     }
 

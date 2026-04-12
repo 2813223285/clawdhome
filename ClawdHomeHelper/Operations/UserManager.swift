@@ -28,6 +28,43 @@ struct UserManager {
         // 4. 创建 home 目录，并限制权限为 700（仅所有者可访问）
         try run("/usr/sbin/createhomedir", args: ["-c", "-u", username])
         try run("/bin/chmod", args: ["700", homePath])
+        try normalizeHomeOwnership(username: username)
+    }
+
+    /// 修复用户家目录归属与基础权限：
+    /// - 处理“同名用户重建后 UID 变化，home 仍归旧 UID”场景
+    /// - 清理导致写入失败的 ACL（如 group:everyone deny delete）
+    /// - 修复常见 shell 配置文件与运行目录归属
+    static func normalizeHomeOwnership(username: String) throws {
+        guard let pw = getpwnam(username) else {
+            throw UserManagerError.uidNotFound(username)
+        }
+        let uid = Int(pw.pointee.pw_uid)
+        let gid = Int(pw.pointee.pw_gid)
+        let ownerGroup = "\(uid):\(gid)"
+        let homePath = "/Users/\(username)"
+        guard FileManager.default.fileExists(atPath: homePath) else { return }
+
+        try run("/usr/sbin/chown", args: [ownerGroup, homePath])
+        try run("/bin/chmod", args: ["700", homePath])
+        _ = try? FilePermissionHelper.clearACL(homePath)
+
+        let shellFiles = [".profile", ".zprofile", ".zshrc"]
+        for relative in shellFiles {
+            let path = "\(homePath)/\(relative)"
+            guard FileManager.default.fileExists(atPath: path) else { continue }
+            _ = try? run("/usr/sbin/chown", args: [ownerGroup, path])
+            _ = try? run("/bin/chmod", args: ["644", path])
+            _ = try? FilePermissionHelper.clearACL(path)
+        }
+
+        let ownedDirs = [".brew", ".npm", ".npm-global", ".openclaw"]
+        for relative in ownedDirs {
+            let path = "\(homePath)/\(relative)"
+            guard FileManager.default.fileExists(atPath: path) else { continue }
+            _ = try? run("/usr/sbin/chown", args: ["-R", ownerGroup, path])
+            _ = try? FilePermissionHelper.clearACL(path)
+        }
     }
 
     // MARK: - 删除用户

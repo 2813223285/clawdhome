@@ -77,8 +77,11 @@ extension ClawdHomeHelperImpl {
         }
 
         // 检查 4：家目录归属（Helper 以 root 运行，可能遗漏 chown）
+        let expectedHomeUID = getpwnam(username)?.pointee.pw_uid
         if let attrs = try? FileManager.default.attributesOfItem(atPath: home),
-           let owner = attrs[.ownerAccountName] as? String, owner != username {
+           let ownerUID = attrs[.ownerAccountID] as? NSNumber,
+           let expectedHomeUID,
+           ownerUID.uint32Value != expectedHomeUID {
             var fixed: Bool? = nil
             var fixError: String? = nil
             if fix {
@@ -88,7 +91,7 @@ extension ClawdHomeHelperImpl {
             items.append(DiagnosticItem(
                 id: "home-owner", group: .permissions, severity: "critical",
                 title: "家目录归属错误",
-                detail: "家目录当前归属 \(owner)，应归属 \(username)，用户无法写入自己的家目录",
+                detail: "家目录当前归属 uid=\(ownerUID)，应归属 \(username) (uid=\(expectedHomeUID))，用户无法写入自己的家目录",
                 fixable: true, fixed: fixed, fixError: fixError, latencyMs: nil))
         }
 
